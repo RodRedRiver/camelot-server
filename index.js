@@ -13,7 +13,6 @@ const pool = new Pool({
 app.use(cors());
 app.use(express.json());
 
-// ── Database setup ────────────────────────────────────────
 async function setupDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS devices (
@@ -57,7 +56,6 @@ async function setupDB() {
   console.log('Database ready');
 }
 
-// ── IP Geolocation ────────────────────────────────────────
 async function geolocate(ip) {
   try {
     if (ip === '::1' || ip === '127.0.0.1') {
@@ -78,17 +76,9 @@ async function geolocate(ip) {
   return { lat: 0, lng: 0, city: 'Unknown', country: 'XX' };
 }
 
-// ── Claude API ────────────────────────────────────────────
 async function getAdvice(data) {
   try {
-    const prompt = `You are an indoor air quality advisor.
-Current readings: CO=${data.co}ppm, CO2=${data.co2}ppm, Humidity=${data.humidity}%, 
-Temp=${data.temp_f}F, PM10=${data.pm10}ug/m3, Pressure=${data.pressure}hPa, 
-NH3=${data.nh3}ppm, LUX=${data.lux}.
-Ideal: CO<8ppm, CO2<1000ppm, Humidity 30-65%, Temp 66-75F, PM10<25ug/m3.
-Give exactly 1 short actionable sentence of advice (max 12 words).
-Only mention sensors that are out of range.
-If all good say: Air quality is good, keep it up.`;
+    const prompt = `You are an indoor air quality advisor. Current readings: CO=${data.co}ppm, CO2=${data.co2}ppm, Humidity=${data.humidity}%, Temp=${data.temp_f}F, PM10=${data.pm10}ug/m3, Pressure=${data.pressure}hPa, NH3=${data.nh3}ppm, LUX=${data.lux}. Ideal: CO<8ppm, CO2<1000ppm, Humidity 30-65%, Temp 66-75F, PM10<25ug/m3. Give exactly 1 short actionable sentence of advice (max 12 words). Only mention sensors that are out of range. If all good say: Air quality is good, keep it up.`;
 
     const res = await axios.post(
       'https://api.anthropic.com/v1/messages',
@@ -112,7 +102,6 @@ If all good say: Air quality is good, keep it up.`;
   }
 }
 
-// ── Routes ────────────────────────────────────────────────
 app.post('/api/readings', async (req, res) => {
   try {
     const {
@@ -138,15 +127,11 @@ app.post('/api/readings', async (req, res) => {
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     `, [device_id, co, co2, humidity, temp_f, pm10, pressure, nh3, ch4, h2, ethanol, no2, lux]);
 
-    const needsAdvice =
-      co  > 8    || co2 > 1000 ||
-      humidity < 30 || humidity > 65 ||
-      pm10 > 25;
+    const needsAdvice = co > 8 || co2 > 1000 || humidity < 30 || humidity > 65 || pm10 > 25;
 
     let adviceMsg = null;
     const lastAdvice = await pool.query(`
-      SELECT timestamp FROM advice
-      WHERE device_id = $1
+      SELECT timestamp FROM advice WHERE device_id = $1
       ORDER BY timestamp DESC LIMIT 1
     `, [device_id]);
 
@@ -191,12 +176,10 @@ app.get('/api/readings/:deviceId', async (req, res) => {
 app.get('/api/devices', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT d.*, 
-        r.co, r.co2, r.humidity, r.temp_f, r.pm10, r.timestamp as last_reading
+      SELECT d.*, r.co, r.co2, r.humidity, r.temp_f, r.pm10, r.timestamp as last_reading
       FROM devices d
       LEFT JOIN readings r ON r.id = (
-        SELECT id FROM readings
-        WHERE device_id = d.id
+        SELECT id FROM readings WHERE device_id = d.id
         ORDER BY timestamp DESC LIMIT 1
       )
     `);
@@ -209,10 +192,8 @@ app.get('/api/devices', async (req, res) => {
 app.get('/api/advice/:deviceId', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT * FROM advice
-      WHERE device_id = $1
-      ORDER BY timestamp DESC
-      LIMIT 20
+      SELECT * FROM advice WHERE device_id = $1
+      ORDER BY timestamp DESC LIMIT 20
     `, [req.params.deviceId]);
     res.json(result.rows);
   } catch (e) {
@@ -220,22 +201,7 @@ app.get('/api/advice/:deviceId', async (req, res) => {
   }
 });
 
-// ── Start ─────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 setupDB().then(() => {
   app.listen(PORT, () => console.log(`Camelot server running on port ${PORT}`));
 });
-```
-
-And your `.env` stays the same:
-```
-PORT=3000
-DATABASE_URL=postgresql://localhost:5432/camelot
-ANTHROPIC_API_KEY=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
-```
-
-Paste the `index.js` into VS Code, save, then run:
-```
-git add .
-git commit -m "fix SSL"
-git push
